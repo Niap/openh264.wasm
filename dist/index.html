@@ -1,0 +1,92 @@
+<html>
+    <head>
+        <title>openh264.wasm</title>
+    </head>
+    <body>
+        <h3>Decode a h264 to yuv420p</h3>
+        <br />
+        <input type="file" id="uploader" />
+        <script>
+            var nalgen = null;
+            var decoder = null;
+            function nal_generator(data) {
+                var currentsps = null;
+                var currentpps = null;
+                function nextNal(b, ofs) {
+                    var o = ofs + 3;
+                    var i, zc = 0;
+                    for (; o < b.length; o++) {
+                        switch (b[o]) {
+                            case 0: zc++; break;
+                            case 1:
+                                if (zc == 3) return o - 3;
+                            default:
+                                zc = 0;
+                        }
+                    }
+                    return null;
+                }
+                var ofs = 0;
+                var mydata = data;
+                var l = nextNal(mydata, ofs);
+                function getnext() {
+                    if (l == null) return null;
+                    var nal = mydata.subarray(ofs, l);
+                    ofs = l;
+                    l = nextNal(mydata, ofs);
+                    return nal;
+                }
+                return getnext;
+            }
+
+            function decoderFrame() {
+                var decode_h264nal = Module.cwrap('decode_nal', 'number', ['number', 'array', 'number']);
+                if (!nalgen) return;
+
+                while (true) {
+                    var nal = nalgen();
+                    console.log("decoder a frame");
+                    if (nal == null) {
+                        console.timeEnd('a');
+                        break;
+                    }
+                    decode_h264nal(decoder, nal, nal.length);
+                }
+
+            }
+
+            function readFromBlobOrFile(blob) {
+                return new Promise((resolve, reject) => {
+                    const fileReader = new FileReader();
+                    fileReader.onload = () => {
+                        resolve(fileReader.result);
+                    };
+                    fileReader.onerror = ({ target: { error: { code } } }) => {
+                        reject(Error(`File could not be read! Code=${code}`));
+                    };
+                    fileReader.readAsArrayBuffer(blob);
+                })
+            }
+
+
+            function frame_callback(a, b, c, width, height, stride1, stride2) {
+
+            }
+
+            const message = document.getElementById('message');
+            const transcode = async ({ target: { files } }) => {
+                var open_decoder = Module.cwrap('open_decoder', 'number', null);
+                decoder = open_decoder();
+                const data = new Uint8Array(await readFromBlobOrFile(files[0]));
+                nalgen = nal_generator(data);
+                console.time('a');
+                decoderFrame();
+
+            };
+            document.getElementById('uploader').addEventListener('change', transcode);
+        </script>
+
+        <script type="text/javascript" src="./decoder.js"></script>
+    </body>
+
+</html>
